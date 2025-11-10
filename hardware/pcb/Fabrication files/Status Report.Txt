@@ -1,0 +1,40 @@
+Output: Gerber X2 Files
+Type  : GerberX2
+From  : Variant [[No Variations]] of Project [CubeSat.PrjPcb]
+   Generated File[CubeSat_Copper_Signal_Top.gbr]
+   Generated File[CubeSat_Copper_Signal_Bot.gbr]
+   Generated File[CubeSat_Pads_Bot.gbr]
+   Generated File[CubeSat_Pads_Top.gbr]
+   Generated File[CubeSat_Legend_Top.gbr]
+   Generated File[CubeSat_Legend_Bot.gbr]
+   Generated File[CubeSat_Soldermask_Top.gbr]
+   Generated File[CubeSat_Soldermask_Bot.gbr]
+   Generated File[CubeSat_Paste_Top.gbr]
+   Generated File[CubeSat_Paste_Bot.gbr]
+   Generated File[CubeSat_Keep-out.gbr]
+   Generated File[CubeSat_Mechanical_1.gbr]
+   Generated File[CubeSat_Top_3D_Body.gbr]
+   Generated File[CubeSat_Top_Courtyard.gbr]
+   Generated File[CubeSat_Top_Designator.gbr]
+   Generated File[CubeSat_Top_Assembly.gbr]
+   Generated File[CubeSat_Bottom_Designator.gbr]
+   Generated File[CubeSat_Mechanical_2.gbr]
+   Generated File[CubeSat_Mechanical_15.gbr]
+   Generated File[CubeSat_Top_Component_Center.gbr]
+   Generated File[CubeSat_Bottom_Assembly.gbr]
+   Generated File[CubeSat_Bottom_Courtyard.gbr]
+   Generated File[CubeSat_Bottom_3D_Body.gbr]
+   Generated File[CubeSat_Bottom_Component_Center.gbr]
+   Generated File[CubeSat_Profile.gbr]
+   Generated File[CubeSat_NPTH_Drill.gbr]
+   Generated File[CubeSat_PTH_Drill.gbr]
+   Generated File[CubeSat_Drawing_1.gbr]
+   Generated File[CubeSat_Drillmap_1.gbr]
+   Generated File[CubeSat.EXTREP]
+   Generated File[CubeSat.REP]
+
+
+Files Generated   : 31
+Documents Printed : 0
+
+Finished Output Generation At 12:41:32 On 09/11/2025
