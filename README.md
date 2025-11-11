@@ -204,18 +204,3 @@ After training, the model achieves:
 - **X-CUBE-AI**: ST's neural network development package
 - **FreeRTOS**: Open-source RTOS for embedded systems
 
-## 📝 License
-
-See LICENSE file in the repository root.
-
-## 👤 Author
-
-anonyme202
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
-
-## 📧 Support
-
-For issues, questions, or suggestions, please open an GitHub issue in the repository.
