@@ -24,37 +24,38 @@
 #include "usart.h"
 #include "gpio.h"
 #include "app_x-cube-ai.h"
-
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
-/* USER CODE END Includes */
-
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
+#include "led_control.h"
+#include "reset_control.h" 
+#include "fault_detection.h"
+#include "ws2812b_driver.h"
+#include "ml_integration.h"
+#include "ttc_communication.h"
+#include "watchdog_manager.h"
+#include "system_test.h"
 
 /* Private variables ---------------------------------------------------------*/
+reset_control_t system_reset = {0};
+system_state_t current_system_state = SYS_STATE_BOOT;
+osMessageQueueId_t faultQueueHandle;
 
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
+// WS2812B Timer handle (replace with your actual timer)
+extern TIM_HandleTypeDef htim2;  // Example: using TIM2, change to your timer
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MPU_Config(void);
 void MX_FREERTOS_Init(void);
+
+// Add missing task function prototypes
+void led_controller_task(void *argument);
+void watchdog_manager_task(void *argument);
+void fault_handler_task(void *argument);
+
+// Add system initialization function
+void system_startup_sequence(void);
+void enter_diagnostic_mode(void);
+void load_ml_model(void);
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -70,37 +71,18 @@ void MX_FREERTOS_Init(void);
   */
 int main(void)
 {
-
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
-
   /* MPU Configuration--------------------------------------------------------*/
   MPU_Config();
 
   /* Enable the CPU Cache */
-
-  /* Enable I-Cache---------------------------------------------------------*/
   SCB_EnableICache();
-
-  /* Enable D-Cache---------------------------------------------------------*/
   SCB_EnableDCache();
 
   /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
@@ -108,8 +90,18 @@ int main(void)
   MX_I2C1_Init();
   MX_USART1_UART_Init();
   MX_X_CUBE_AI_Init();
-  /* USER CODE BEGIN 2 */
 
+  /* USER CODE BEGIN 2 */
+  // Initialize subsystems AFTER peripherals are configured
+  led_system_init();
+  reset_controller_init();
+  watchdog_manager_init();
+  
+  // Initialize WS2812B driver with timer (replace with your timer and channel)
+  ws2812b_init(&htim2, TIM_CHANNEL_1);  // Adjust to your timer configuration
+  
+  // Run system startup sequence (includes self-test)
+  system_startup_sequence();
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -119,8 +111,7 @@ int main(void)
   /* Start scheduler */
   osKernelStart();
 
-  /* We should never get here as control is now taken by the scheduler */
-
+  /* We should never get here as control is taken by the scheduler */
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
@@ -192,10 +183,129 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
+// System startup sequence with WS2812B integration
+void system_startup_sequence(void) {
+    // Boot sequence with LED diagnostics
+    ws2812b_chase_pattern(COLOR_BOOT, 3);  // 3 cycles of chase pattern
+
+    // Step 1: MCU initialization
+    set_led_blink_rate(LED_SYS_OK, 500);
+
+    // Step 2: Reset circuit initialization
+    reset_controller_init();
+
+    // Step 3: Peripheral initialization
+    enter_diagnostic_mode();
+
+    // Step 4: ML model loading
+    set_led(LED_ML_ACTIVE, 1);
+    load_ml_model();
+    set_led(LED_ML_ACTIVE, 0);
+
+    // Step 5: System ready - start autonomous monitoring
+    set_led(LED_SYS_OK, 1);
+    ws2812b_set_simple_color(COLOR_NORMAL);  // Set all RGB LEDs to green
+    
+    // Update system state
+    current_system_state = SYS_STATE_NORMAL;
+}
+
+void enter_diagnostic_mode(void) {
+    // Flash all LEDs in sequence for diagnostic
+    for(int i = 0; i < LED_COUNT; i++) {
+        set_led(i, 1);
+        osDelay(200);
+        set_led(i, 0);
+    }
+    
+    // Test RGB LED with different colors
+    ws2812b_set_simple_color(COLOR_RED);
+    osDelay(500);
+    ws2812b_set_simple_color(COLOR_GREEN);
+    osDelay(500);
+    ws2812b_set_simple_color(COLOR_BLUE);
+    osDelay(500);
+    ws2812b_set_simple_color(COLOR_NORMAL);
+}
+
+void load_ml_model(void) {
+    // Load ML model - implementation depends on STM32Cube.AI
+    // This is called by the startup sequence
+    osDelay(1000); // Simulate loading time
+}
+
+// Add missing task implementations
+void led_controller_task(void *argument) {
+    const TickType_t xFrequency = pdMS_TO_TICKS(50); // 20Hz update
+    
+    for(;;) {
+        update_leds_task(); // Update LED blinking states
+        vTaskDelay(xFrequency);
+    }
+}
+
+void watchdog_manager_task(void *argument) {
+    // Use the corrected watchdog manager task
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(500); // 2Hz update
+    
+    if (!watchdog_initialized) {
+        watchdog_manager_init();
+    }
+    
+    for(;;) {
+        // Toggle WDOG_WAKE pin to keep watchdog alive
+        HAL_GPIO_TogglePin(WDOG_WAKE_PORT, WDOG_WAKE_PIN);
+        last_watchdog_ping = xTaskGetTickCount();
+        
+        // Check if watchdog has timed out
+        if (watchdog_check_timeout()) {
+            // Watchdog timeout detected - trigger system reset
+            system_reset.watchdog_reset = 1;
+        }
+        
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+void fault_handler_task(void *argument) {
+    ml_result_t fault;
+    
+    for(;;) {
+        // Wait for fault messages from the queue
+        if (osMessageQueueGet(faultQueueHandle, &fault, NULL, osWaitForever) == osOK) {
+            handle_detected_fault(&fault);
+        }
+    }
+}
+
+// Quick system check function for debugging
+void quick_system_check(void) {
+    // Test LED subsystem
+    for(int i = 0; i < LED_COUNT; i++) {
+        set_led(i, 1);
+        HAL_Delay(100);
+        set_led(i, 0);
+    }
+    
+    // Test RGB LED
+    ws2812b_set_simple_color(COLOR_RED);
+    HAL_Delay(500);
+    ws2812b_set_simple_color(COLOR_GREEN);
+    HAL_Delay(500);
+    ws2812b_set_simple_color(COLOR_BLUE);
+    HAL_Delay(500);
+    ws2812b_set_simple_color(COLOR_NORMAL);
+    
+    // Test reset outputs
+    HAL_GPIO_WritePin(ML_FAULT_PORT, ML_FAULT_PIN, GPIO_PIN_SET);
+    HAL_Delay(100);
+    HAL_GPIO_WritePin(ML_FAULT_PORT, ML_FAULT_PIN, GPIO_PIN_RESET);
+}
+
 /* USER CODE END 4 */
 
- /* MPU Configuration */
-
+/* MPU Configuration */
 void MPU_Config(void)
 {
   MPU_Region_InitTypeDef MPU_InitStruct = {0};
@@ -220,7 +330,6 @@ void MPU_Config(void)
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
   /* Enables the MPU */
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
-
 }
 
 /**
@@ -232,11 +341,22 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
+  
+  // Set all fault LEDs to indicate error state
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, GPIO_PIN_SET);
+  
+  // Set RGB LED to critical red
+  ws2812b_set_simple_color(COLOR_CRITICAL);
+  
   while (1)
   {
+    // Flash warning LED rapidly
+    HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_3);
+    HAL_Delay(100);
   }
   /* USER CODE END Error_Handler_Debug */
 }
+
 #ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number

@@ -18,14 +18,18 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include "led_control.h"
-#include "reset_control.h"
-#include "heartbeat_monitor.h"
-#include "fault_handler.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
+
+#include "led_control.h"
+#include "reset_control.h"
+#include "heartbeat_monitor.h"
+#include "fault_detection.h"
+#include "ttc_communication.h"
+#include "watchdog_manager.h"
+#include "ml_integration.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -51,28 +55,63 @@
 /* USER CODE BEGIN Variables */
 
 /* USER CODE END Variables */
-/* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+
+// Task handles (if you need them)
+osThreadId_t heartbeatTaskHandle;
+osThreadId_t mlTaskHandle;
+osThreadId_t ledTaskHandle;
+osThreadId_t faultTaskHandle;
+osThreadId_t resetTaskHandle;
+osThreadId_t ttcTaskHandle;
+osThreadId_t watchdogTaskHandle;
+
+// Task attributes
+osThreadAttr_t heartbeat_monitor_attributes = {
+    .name = "HeartbeatMonitor",
+    .stack_size = 1024,
+    .priority = osPriorityNormal,
 };
-/* Definitions for myTask02 */
-osThreadId_t myTask02Handle;
-const osThreadAttr_t myTask02_attributes = {
-  .name = "myTask02",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityAboveNormal1,
+
+osThreadAttr_t ml_inference_attributes = {
+    .name = "MLInference", 
+    .stack_size = 4096,
+    .priority = osPriorityNormal,
+};
+
+osThreadAttr_t led_controller_attributes = {
+    .name = "LEDController",
+    .stack_size = 1024,
+    .priority = osPriorityLow,
+};
+
+osThreadAttr_t fault_handler_attributes = {
+    .name = "FaultHandler",
+    .stack_size = 1536,
+    .priority = osPriorityRealtime,
+};
+
+osThreadAttr_t reset_control_attributes = {
+    .name = "ResetControl",
+    .stack_size = 1024, 
+    .priority = osPriorityHigh,
+};
+
+osThreadAttr_t ttc_monitor_attributes = {
+    .name = "TTCMonitor",
+    .stack_size = 2048,
+    .priority = osPriorityNormal,
+};
+
+osThreadAttr_t watchdog_manager_attributes = {
+    .name = "WatchdogManager",
+    .stack_size = 1024,
+    .priority = osPriorityHigh,
 };
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 
 /* USER CODE END FunctionPrototypes */
-
-void StartDefaultTask(void *argument);
-void StartTask02(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -83,15 +122,18 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
   */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
-  osThreadDef(ledTask, StartLedTask, osPriorityLow, 0, 1024);
-  osThreadDef(resetTask, StartResetTask, osPriorityHigh, 0, 1024);
-  osThreadDef(heartbeatTask, StartHeartbeatTask, osPriorityNormal, 0, 1024);
-  osThreadDef(faultTask, StartFaultTask, osPriorityRealtime, 0, 1536);
-
-  ledTaskHandle = osThreadCreate(osThread(ledTask), NULL);
-  resetTaskHandle = osThreadCreate(osThread(resetTask), NULL);
-  heartbeatTaskHandle = osThreadCreate(osThread(heartbeatTask), NULL);
-  faultTaskHandle = osThreadCreate(osThread(faultTask), NULL);
+  
+  // Create message queue for fault handling
+  faultQueueHandle = osMessageQueueNew(10, sizeof(ml_result_t), NULL);
+  
+  // Create all tasks using osThreadNew (CMSIS-RTOS v2 method)
+  heartbeatTaskHandle = osThreadNew(heartbeat_monitor_task, NULL, &heartbeat_monitor_attributes);
+  mlTaskHandle = osThreadNew(ml_inference_task, NULL, &ml_inference_attributes);
+  ledTaskHandle = osThreadNew(led_controller_task, NULL, &led_controller_attributes);
+  faultTaskHandle = osThreadNew(fault_handler_task, NULL, &fault_handler_attributes);
+  resetTaskHandle = osThreadNew(reset_control_task, NULL, &reset_control_attributes);
+  ttcTaskHandle = osThreadNew(ttc_monitor_task, NULL, &ttc_monitor_attributes);
+  watchdogTaskHandle = osThreadNew(watchdog_manager_task, NULL, &watchdog_manager_attributes);
 
   /* USER CODE END Init */
 
@@ -111,13 +153,6 @@ void MX_FREERTOS_Init(void) {
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
 
-  /* Create the thread(s) */
-  /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
-
-  /* creation of myTask02 */
-  myTask02Handle = osThreadNew(StartTask02, NULL, &myTask02_attributes);
-
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
@@ -125,51 +160,4 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
   /* USER CODE END RTOS_EVENTS */
-
 }
-
-/* USER CODE BEGIN Header_StartDefaultTask */
-/**
-  * @brief  Function implementing the defaultTask thread.
-  * @param  argument: Not used
-  * @retval None
-  */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
-{
-  /* USER CODE BEGIN StartDefaultTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartDefaultTask */
-}
-
-/* USER CODE BEGIN Header_StartTask02 */
-/**
-* @brief Function implementing the myTask02 thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartTask02 */
-void StartTask02(void *argument)
-{
-  /* USER CODE BEGIN StartTask02 */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartTask02 */
-}
-
-/* Private application code --------------------------------------------------*/
-/* USER CODE BEGIN Application */
-
-/* USER CODE END Application */
-void StartLedTask(void *argument);
-void StartResetTask(void *argument);
-void StartHeartbeatTask(void *argument);
-void StartFaultTask(void *argument);
-
